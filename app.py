@@ -4,7 +4,8 @@ import aioboto3
 import asyncio
 from aiolimiter import AsyncLimiter
 from jinja2 import Template
-from datetime import datetime
+from datetime import datetime, timedelta
+import plotly.graph_objects as go
 
 from dotenv import load_dotenv
 import os
@@ -35,8 +36,12 @@ logging.getLogger('aioboto3').setLevel(logging.INFO)
 
 # ================== CONFIG ==================
 AWS_REGION = "ap-south-1"
+# Mailing credentials
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+# Statistics credentials
+STATS_ACCESS_KEY_ID = os.getenv('STATS_ACCESS_KEY_ID')
+STATS_SECRET_ACCESS_KEY = os.getenv('STATS_SECRET_ACCESS_KEY')
 # ============================================
 
 st.set_page_config(page_title="AWS SES Mass Mailer", layout="centered")
@@ -61,6 +66,69 @@ if 'failed_emails' not in st.session_state:
     st.session_state.failed_emails = []
 if 'demo_sent' not in st.session_state:
     st.session_state.demo_sent = False
+
+# ==================== SES STATISTICS ====================
+async def get_ses_statistics():
+    try:
+        session = aioboto3.Session(
+            aws_access_key_id=STATS_ACCESS_KEY_ID or AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=STATS_SECRET_ACCESS_KEY or AWS_SECRET_ACCESS_KEY,
+            region_name=region
+        )
+        async with session.client("ses") as ses_client:
+            # Get send statistics for last 24 hours
+            response = await ses_client.get_send_statistics()
+            
+            # Calculate 24 hours ago
+            now = datetime.utcnow()
+            twenty_four_hours_ago = now - timedelta(hours=24)
+            
+            # Filter data points from last 24 hours
+            recent_stats = []
+            for data_point in response.get('SendDataPoints', []):
+                timestamp = data_point['Timestamp'].replace(tzinfo=None)
+                if timestamp >= twenty_four_hours_ago:
+                    recent_stats.append(data_point)
+            
+            # Calculate totals
+            total_sent = sum(point.get('DeliveryAttempts', 0) for point in recent_stats)
+            total_bounces = sum(point.get('Bounces', 0) for point in recent_stats)
+            total_complaints = sum(point.get('Complaints', 0) for point in recent_stats)
+            
+            # Calculate rates
+            bounce_rate = (total_bounces / total_sent * 100) if total_sent > 0 else 0
+            complaint_rate = (total_complaints / total_sent * 100) if total_sent > 0 else 0
+            
+            # Process all data points for historic view
+            all_stats = []
+            for data_point in response.get('SendDataPoints', []):
+                timestamp = data_point['Timestamp'].replace(tzinfo=None)
+                sent = data_point.get('DeliveryAttempts', 0)
+                bounces = data_point.get('Bounces', 0)
+                complaints = data_point.get('Complaints', 0)
+                
+                bounce_rate_point = (bounces / sent * 100) if sent > 0 else 0
+                complaint_rate_point = (complaints / sent * 100) if sent > 0 else 0
+                
+                all_stats.append({
+                    'timestamp': timestamp,
+                    'bounce_rate': bounce_rate_point,
+                    'complaint_rate': complaint_rate_point
+                })
+            
+            return {
+                'emails_sent_24h': total_sent,
+                'bounce_rate': bounce_rate,
+                'complaint_rate': complaint_rate,
+                'total_bounces': total_bounces,
+                'total_complaints': total_complaints,
+                'historic_data': all_stats
+            }
+    except Exception as e:
+        logger.error(f"Error fetching SES statistics: {str(e)}")
+        return None
+
+
 
 # ==================== ASYNC FUNCTIONS ====================
 async def send_demo_email(name, email, subject, html_body):
@@ -263,6 +331,56 @@ with col2:
             st.session_state.show_bulk_confirm = True
             st.info(f"Found {len(unique_df)} unique emails out of {len(df)} total emails")
 
+# ==================== SES STATISTICS ====================
+st.markdown("---")
+st.subheader("📊 SES Statistics")
+
+if 'ses_stats' not in st.session_state:
+    st.session_state.ses_stats = None
+
+if st.button("🔄 Refresh Stats"):
+    with st.spinner("Fetching statistics..."):
+        st.session_state.ses_stats = asyncio.run(get_ses_statistics())
+
+if st.session_state.ses_stats:
+    stats = st.session_state.ses_stats
+    
+    st.write("**Last 24 Hours:**")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Emails Sent", f"{stats['emails_sent_24h']:,}")
+    with col2:
+        st.metric("Bounce Rate", f"{stats['bounce_rate']:.2f}%", 
+                 delta=f"{stats['total_bounces']} bounces")
+    with col3:
+        st.metric("Complaint Rate", f"{stats['complaint_rate']:.2f}%", 
+                 delta=f"{stats['total_complaints']} complaints")
+    
+    if stats['historic_data']:
+        st.write("**Historic Trends:**")
+        df = pd.DataFrame(stats['historic_data'])
+        df = df.sort_values('timestamp')
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['bounce_rate'], 
+                                name='Bounce Rate (%)', line=dict(color='red')))
+        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['complaint_rate'], 
+                                name='Complaint Rate (%)', line=dict(color='orange')))
+        
+        fig.update_layout(title='Bounce & Complaint Rates Over Time', 
+                         xaxis_title='Time', yaxis_title='Rate (%)', height=400)
+        st.plotly_chart(fig, use_container_width=True)
+else:
+    st.write("**Last 24 Hours:**")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Emails Sent", "--")
+    with col2:
+        st.metric("Bounce Rate", "--")
+    with col3:
+        st.metric("Complaint Rate", "--")
+    st.info("Click 'Refresh Stats' to load data")
+
 # ==================== DEMO SUCCESS MESSAGE ====================
 if st.session_state.get('demo_sent', False):
     st.success("📧 Demo email sent successfully!")
@@ -347,3 +465,5 @@ if st.session_state.bulk_running:
         sent_container,
         failed_container
     ))
+
+st.markdown("---")

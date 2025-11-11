@@ -4,3 +4,37 @@
 2025-10-24 18:29:48,633 - __main__ - INFO - Demo email sent successfully to dinesh@ecell.in. MessageId: 0109019a164dcc21-0b992227-f592-4a2b-a8bc-b823e5edb7d2-000000
 2025-10-24 18:33:07,521 - __main__ - INFO - Sending demo email to dinesh@ecell.in
 2025-10-24 18:33:07,813 - __main__ - INFO - Demo email sent successfully to dinesh@ecell.in. MessageId: 0109019a1650d63e-ab232a8d-c9f5-47b9-aa91-b0c9b3e8fb1a-000000
+2025-10-24 19:56:18,108 - __main__ - INFO - Sending demo email to dinesh@ecell.in
+2025-10-24 19:56:18,299 - __main__ - ERROR - SES ClientError sending demo email to dinesh@ecell.in: SignatureDoesNotMatch - The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.
+2025-10-24 20:01:04,453 - __main__ - INFO - Sending demo email to dinesh@ecell.in
+2025-10-24 20:01:04,651 - __main__ - ERROR - SES ClientError sending demo email to dinesh@ecell.in: SignatureDoesNotMatch - The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.
+2025-10-25 13:57:20,912 - asyncio - ERROR - Task exception was never retrieved
+future: <Task finished name='Task-126' coro=<WebSocketProtocol13.write_message.<locals>.wrapper() done, defined at /Volumes/Asta/E-Cell Web/mail-streamlit/venv/lib/python3.10/site-packages/tornado/websocket.py:1111> exception=WebSocketClosedError()>
+Traceback (most recent call last):
+  File "/Volumes/Asta/E-Cell Web/mail-streamlit/venv/lib/python3.10/site-packages/tornado/websocket.py", line 1113, in wrapper
+    await fut
+tornado.iostream.StreamClosedError: Stream is closed
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Volumes/Asta/E-Cell Web/mail-streamlit/venv/lib/python3.10/site-packages/tornado/websocket.py", line 1115, in wrapper
+    raise WebSocketClosedError()
+tornado.websocket.WebSocketClosedError
+2025-11-03 19:37:08,502 - __main__ - ERROR - Error fetching SES statistics: An error occurred (SignatureDoesNotMatch) when calling the GetSendStatistics operation: The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.
+2025-11-03 19:58:51,120 - __main__ - INFO - Sending demo email to dinesh@ecell.in
+2025-11-03 19:58:51,241 - __main__ - ERROR - SES ClientError sending demo email to dinesh@ecell.in: SignatureDoesNotMatch - The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.
+2025-11-03 19:59:26,679 - __main__ - INFO - Sending demo email to dinesh@ecell.in
+2025-11-03 19:59:26,784 - __main__ - ERROR - SES ClientError sending demo email to dinesh@ecell.in: SignatureDoesNotMatch - The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.
+2025-11-03 19:59:31,993 - __main__ - INFO - Sending demo email to dinesh@ecell.in
+2025-11-03 19:59:32,114 - __main__ - ERROR - SES ClientError sending demo email to dinesh@ecell.in: SignatureDoesNotMatch - The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.
+2025-11-03 20:00:36,459 - __main__ - INFO - Sending demo email to dinesh@ecell.in
+2025-11-03 20:00:36,616 - __main__ - ERROR - SES ClientError sending demo email to dinesh@ecell.in: SignatureDoesNotMatch - The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.
+2025-11-03 20:00:36,993 - __main__ - INFO - Sending demo email to dinesh@ecell.in
+2025-11-03 20:00:37,095 - __main__ - ERROR - SES ClientError sending demo email to dinesh@ecell.in: SignatureDoesNotMatch - The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.
+2025-11-03 20:00:47,433 - __main__ - INFO - Sending demo email to dinesh@ecell.in
+2025-11-03 20:00:47,545 - __main__ - ERROR - SES ClientError sending demo email to dinesh@ecell.in: SignatureDoesNotMatch - The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.
+2025-11-05 14:55:11,827 - __main__ - INFO - Sending demo email to dinesh@ecell.in
+2025-11-05 14:55:11,928 - __main__ - ERROR - SES ClientError sending demo email to dinesh@ecell.in: SignatureDoesNotMatch - The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.
+2025-11-05 23:21:21,336 - __main__ - INFO - Sending demo email to dinesh@ecell.in
+2025-11-05 23:21:21,513 - __main__ - INFO - Demo email sent successfully to dinesh@ecell.in. MessageId: 0109019a55250746-0fb36621-d372-4f52-90f1-536f884d2126-000000
