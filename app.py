@@ -13,7 +13,15 @@ import logging
 from botocore.exceptions import ClientError, BotoCoreError
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 import re
+
+# ==================== TEMPLATE VARIABLE DETECTION ====================
+def extract_template_variables(template_text):
+    """Extract variables from Jinja2 template like {{name}}, {{college}}"""
+    pattern = r'\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}'
+    variables = re.findall(pattern, template_text)
+    return list(set(variables))  # Remove duplicates
 
 # Load environment variables
 load_dotenv()
@@ -131,24 +139,33 @@ async def get_ses_statistics():
 
 
 # ==================== ASYNC FUNCTIONS ====================
-async def send_demo_email(name, email, subject, html_body):
+async def send_demo_email(email, subject, html_body, template_vars, pdf_path=None):
     logger.info(f"Sending demo email to {email}")
     try:
         html_template = Template(html_body)
-        rendered_html = html_template.render(name=name)
+        rendered_html = html_template.render(**template_vars)
         text_content = re.sub('<[^<]+?>', '', rendered_html)
         
         # Create MIME message
-        msg = MIMEMultipart('alternative')
+        msg = MIMEMultipart('mixed')
         msg['Subject'] = subject
         msg['From'] = f"{sender_name} <{sender_email}>"
         msg['To'] = email
         
-        # Add text and HTML parts
+        # Create alternative container for text/html
+        msg_alt = MIMEMultipart('alternative')
         text_part = MIMEText(text_content, 'plain', 'utf-8')
         html_part = MIMEText(rendered_html, 'html', 'utf-8')
-        msg.attach(text_part)
-        msg.attach(html_part)
+        msg_alt.attach(text_part)
+        msg_alt.attach(html_part)
+        msg.attach(msg_alt)
+        
+        # Add PDF attachment if provided
+        if pdf_path and os.path.exists(pdf_path):
+            with open(pdf_path, 'rb') as f:
+                pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
+                pdf_attachment.add_header('Content-Disposition', 'attachment', filename=os.path.basename(pdf_path))
+                msg.attach(pdf_attachment)
         
         session = aioboto3.Session(
             aws_access_key_id=AWS_ACCESS_KEY_ID,
@@ -172,24 +189,33 @@ async def send_demo_email(name, email, subject, html_body):
         logger.error(f"Unexpected error sending demo email to {email}: {str(e)}")
         raise
 
-async def send_single_email(recipient, name, subject, html_body, ses_client, limiter):
+async def send_single_email(recipient, subject, html_body, template_vars, ses_client, limiter, pdf_path=None):
     async with limiter:
         try:
             html_template = Template(html_body)
-            rendered_html = html_template.render(name=name)
+            rendered_html = html_template.render(**template_vars)
             text_content = re.sub('<[^<]+?>', '', rendered_html)
             
             # Create MIME message
-            msg = MIMEMultipart('alternative')
+            msg = MIMEMultipart('mixed')
             msg['Subject'] = subject
             msg['From'] = f"{sender_name} <{sender_email}>"
             msg['To'] = recipient
             
-            # Add text and HTML parts
+            # Create alternative container for text/html
+            msg_alt = MIMEMultipart('alternative')
             text_part = MIMEText(text_content, 'plain', 'utf-8')
             html_part = MIMEText(rendered_html, 'html', 'utf-8')
-            msg.attach(text_part)
-            msg.attach(html_part)
+            msg_alt.attach(text_part)
+            msg_alt.attach(html_part)
+            msg.attach(msg_alt)
+            
+            # Add PDF attachment if provided
+            if pdf_path and os.path.exists(pdf_path):
+                with open(pdf_path, 'rb') as f:
+                    pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
+                    pdf_attachment.add_header('Content-Disposition', 'attachment', filename=os.path.basename(pdf_path))
+                    msg.attach(pdf_attachment)
             
             response = await ses_client.send_raw_email(
                 Source=f"{sender_name} <{sender_email}>",
@@ -207,7 +233,8 @@ async def send_single_email(recipient, name, subject, html_body, ses_client, lim
             logger.error(f"Unexpected error for {recipient}: {str(e)}")
             raise
 
-async def run_bulk_with_progress(df, subject, html_body, progress_bar, status_text, current_email, sent_container, failed_container):
+async def run_bulk_with_progress(df, subject, html_body, progress_bar, status_text, current_email, sent_container, failed_container, pdf_folder=None):
+    template_vars = extract_template_variables(html_body)
     logger.info(f"Starting bulk email campaign for {len(df)} recipients")
     limiter = AsyncLimiter(rate_limit, 1)
     total = len(df)
@@ -225,11 +252,25 @@ async def run_bulk_with_progress(df, subject, html_body, progress_bar, status_te
                 break
                 
             recipient = row["email"]
-            name = row.get("name", "there")
+            pdf_filename = row.get("pdf", None)
+            pdf_path = None
+            if pdf_filename and pdf_folder:
+                pdf_path = os.path.join(pdf_folder, pdf_filename)
+                if not os.path.exists(pdf_path):
+                    logger.warning(f"PDF not found: {pdf_path} for {recipient}")
+                    pdf_path = None
+                else:
+                    logger.info(f"PDF found: {pdf_path} for {recipient}")
+            
+            # Build template variables from CSV row
+            template_values = {}
+            for var in template_vars:
+                template_values[var] = row.get(var, f"[{var}]")
+            
             current_email.text(f"📧 Sending to: {recipient}")
             
             try:
-                await send_single_email(recipient, name, subject, html_body, ses_client, limiter)
+                await send_single_email(recipient, subject, html_body, template_values, ses_client, limiter, pdf_path)
                 st.session_state.sent_emails.append(recipient)
                 sent_count += 1
             except Exception as e:
@@ -264,7 +305,7 @@ html_content = st.text_area(
     "Email Content (HTML)",
     value="<p>Hello {{ name }}, this is an update from E-Cell!</p>",
     height=200,
-    help="Use HTML tags for formatting. Use {{ name }} for personalization."
+    help="Use HTML tags for formatting. Use {{ variable }} for personalization (e.g., {{ name }}, {{ college }})."
 )
 # Ensure proper HTML structure
 if html_content:
@@ -296,16 +337,27 @@ else:
 </body>
 </html>"""
 
-# ==================== EMAIL PREVIEW ====================
+# ==================== VARIABLE DETECTION & PREVIEW ====================
+# Detect template variables
+template_vars = extract_template_variables(html_content)
+if template_vars:
+    st.info(f"📝 Detected variables: {', '.join(template_vars)}")
+
 if st.checkbox("📋 Preview Email"):
     st.write("**Email Preview:**")
-    preview_name = st.text_input("Preview Name", value="John Doe", key="preview_name")
+    
+    # Dynamic input fields for all detected variables
+    preview_values = {}
+    if template_vars:
+        for var in template_vars:
+            default_val = "John Doe" if var == "name" else f"Sample {var.title()}"
+            preview_values[var] = st.text_input(f"Preview {var.title()}", value=default_val, key=f"preview_{var}")
     
     # Render preview
     try:
         from jinja2 import Template
         preview_template = Template(html_body)
-        preview_html = preview_template.render(name=preview_name)
+        preview_html = preview_template.render(**preview_values)
         st.components.v1.html(preview_html, height=400, scrolling=True)
     except Exception as e:
         st.error(f"Preview error: {e}")
@@ -320,16 +372,39 @@ with col1:
 
 with col2:
     csv_file = st.file_uploader("Upload CSV", type=["csv"], key="csv_upload")
+    pdf_folder = "pdfs"  # Default PDF folder
+    
+    # Show PDF folder status
+    if os.path.exists(pdf_folder):
+        pdf_files = [f for f in os.listdir(pdf_folder) if f.endswith('.pdf')]
+        if pdf_files:
+            st.success(f"✓ Found {len(pdf_files)} PDF files in 'pdfs' folder")
+        else:
+            st.info("📁 'pdfs' folder exists but no PDF files found")
+    else:
+        st.info("📁 Create 'pdfs' folder for PDF attachments")
     if csv_file and st.button("📊 Bulk Email", use_container_width=True):
         df = pd.read_csv(csv_file)
         if "email" not in df.columns:
             st.error("CSV must contain an 'email' column!")
         else:
-            # Get unique emails
-            unique_df = df.drop_duplicates(subset=['email'])
-            st.session_state.bulk_df = unique_df
-            st.session_state.show_bulk_confirm = True
-            st.info(f"Found {len(unique_df)} unique emails out of {len(df)} total emails")
+            # Check if CSV has required template variables
+            missing_vars = [var for var in template_vars if var not in df.columns]
+            if missing_vars:
+                st.error(f"CSV missing required columns: {', '.join(missing_vars)}")
+                st.info(f"Required columns: email{', ' + ', '.join(template_vars) if template_vars else ''}")
+            else:
+                # Get unique emails
+                unique_df = df.drop_duplicates(subset=['email'])
+                st.session_state.bulk_df = unique_df
+                st.session_state.pdf_folder = pdf_folder
+                st.session_state.show_bulk_confirm = True
+                has_pdf_col = 'pdf' in df.columns
+                st.info(f"Found {len(unique_df)} unique emails out of {len(df)} total emails")
+                if has_pdf_col:
+                    st.info("📎 PDF column detected - attachments will be included")
+                if template_vars:
+                    st.success(f"✓ Template variables found: {', '.join(template_vars)}")
 
 # ==================== SES STATISTICS ====================
 st.markdown("---")
@@ -390,15 +465,37 @@ if st.session_state.get('demo_sent', False):
 if st.session_state.get('show_demo_popup', False):
     st.markdown("---")
     st.subheader("📧 Demo Email")
-    demo_name = st.text_input("Recipient Name", value="Dinesh Test")
+    
+    # Dynamic input fields for all template variables
+    demo_values = {}
     demo_email = st.text_input("Recipient Email", value="dinesh@ecell.in")
+    
+    if template_vars:
+        st.write("**Fill template variables:**")
+        for var in template_vars:
+            default_val = "Dinesh Test" if var == "name" else f"Sample {var.title()}"
+            demo_values[var] = st.text_input(f"{var.title()}", value=default_val, key=f"demo_{var}")
+    
+    demo_pdf = st.file_uploader("Attach PDF (optional)", type=["pdf"], key="demo_pdf")
     
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Send Demo", type="primary"):
-            if demo_name and demo_email:
+            if demo_email and all(demo_values.values()):
                 try:
-                    asyncio.run(send_demo_email(demo_name, demo_email, subject, html_body))
+                    pdf_path = None
+                    if demo_pdf:
+                        # Save uploaded file temporarily
+                        pdf_path = f"/tmp/{demo_pdf.name}"
+                        with open(pdf_path, "wb") as f:
+                            f.write(demo_pdf.getbuffer())
+                    
+                    asyncio.run(send_demo_email(demo_email, subject, html_body, demo_values, pdf_path))
+                    
+                    # Clean up temp file
+                    if pdf_path and os.path.exists(pdf_path):
+                        os.remove(pdf_path)
+                    
                     st.session_state.demo_sent = True
                     st.session_state.show_demo_popup = False
                     st.rerun()
@@ -463,7 +560,8 @@ if st.session_state.bulk_running:
         status_text, 
         current_email,
         sent_container,
-        failed_container
+        failed_container,
+        st.session_state.get('pdf_folder')
     ))
 
 st.markdown("---")
