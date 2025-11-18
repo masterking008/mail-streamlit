@@ -5,7 +5,8 @@
 1. Create virtual environment and install dependencies:
    ```bash
    python -m venv venv
-   source venv/bin/activate
+   win : venv\Scripts\activate
+   mac: source venv/bin/activate
    pip install -r requirements.txt
    ```
 
@@ -13,3 +14,5 @@
    ```bash
    ./activate.sh
    ```# mail-streamline
+
+
